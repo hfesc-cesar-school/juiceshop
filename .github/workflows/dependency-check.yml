@@ -3,6 +3,8 @@ name: OWASP Dependency-Check
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   dependency-check:
@@ -12,30 +14,40 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Instalar jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: Instalar dependências Node.js
+        run: |
+          # Garante package-lock.json e node_modules
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
       - name: Executar OWASP Dependency-Check
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
-            owasp/dependency-check:8.1.1 \
+            owasp/dependency-check:12.1.0 \
             --scan /src \
             --format JSON \
-            --out /src
+            --out /src \
+            --disableArchive
 
-      - name: Validar resultados
+      - name: Validar relatório e listar vulnerabilidades
         run: |
-          REPORT=dependency-check-report.json
+          REPORT="dependency-check-report.json"
+          # Conta dependências com vulnerabilidades
           vuln_count=$(jq '[.dependencies[] | select(.vulnerabilities != null)] | length' "$REPORT")
           if [ "$vuln_count" -eq 0 ]; then
             echo "✅ Nenhuma vulnerabilidade encontrada pelo Dependency-Check"
           else
             echo "❌ Encontradas $vuln_count dependências vulneráveis:"
-            jq -r '.dependencies[]
-                    | select(.vulnerabilities != null)
-                    | "\(.fileName):\n  \(.vulnerabilities[]
-                         | "\(.name) (gravidade: \(.severity)) – \(.description)")\n"' \
-                 "$REPORT"
+            jq -r '
+              .dependencies[]
+              | select(.vulnerabilities != null)
+              | "\(.fileName):\n  \(.vulnerabilities[]
+                  | "- [\(.severity)] \(.name): \(.description)"
+                )"
+            ' "$REPORT"
             exit 1
           fi
