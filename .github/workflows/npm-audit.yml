@@ -1,15 +1,14 @@
-name: NPM Audit
+name: Audit de Dependências
 
 on:
   push:
     branches:
       - main
   pull_request:
-    branches:
-      - main
 
 jobs:
   audit:
+    name: Executar npm audit
     runs-on: ubuntu-latest
 
     steps:
@@ -26,9 +25,14 @@ jobs:
             npm install
           fi
 
-      - name: Executar npm audit
-        run: |
-          npm audit --json > audit-report.json || true
+      - name: Gerar relatório de audit
+        run: npm audit --json > audit-report.json || true
+
+      - name: Upload do relatório de audit como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report
+          path: audit-report.json
 
       - name: Instalar jq
         run: |
@@ -37,20 +41,24 @@ jobs:
 
       - name: Validar resultados do audit
         run: |
-          total=$(jq 'if has("metadata") and .metadata.vulnerabilities then reduce .metadata.vulnerabilities[] as $v (0; . + $v) else 0 end' audit-report.json)
+          # Soma total de vulnerabilidades em .metadata.vulnerabilities
+          total=$(jq '
+            if has("metadata") and .metadata.vulnerabilities
+            then reduce .metadata.vulnerabilities[] as $v (0; . + $v)
+            else 0 end
+          ' audit-report.json)
+
           if [ "$total" -eq 0 ]; then
             echo "✅ Nenhuma vulnerabilidade encontrada pelo npm audit"
           else
             echo "❌ npm audit encontrou $total vulnerabilidades:"
             jq -r '
-              .advisories[]
-              | "\(.severity) em \(.module_name) – \(.title): versões vulneráveis: \(.vulnerable_versions); patch em: \(.patched_versions); mais info: \(.url)"
+              (.advisories? // {})    # fallback para objeto vazio se advisories não existir
+              | .[]                   # itera apenas se houver itens
+              | "\(.severity) em \(.module_name) – \(.title):
+                versões vulneráveis: \(.vulnerable_versions);
+                patch em: \(.patched_versions);
+                mais info: \(.url)"
             ' audit-report.json
             exit 1
           fi
-
-      - name: Upload npm audit report
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: npm-audit-report
-          path: audit-report.json

@@ -1,4 +1,4 @@
-name: SonarQube Full Pipeline
+name: SonarQube Analysis
 
 on:
   push:
@@ -8,110 +8,66 @@ on:
 
 jobs:
   sonar:
-    runs-on: ubuntu-latest
-    env:
-      SONAR_HOST_URL: http://localhost:9000
-      PROJECT_KEY: hfesc-cesar-juiceshop
+    name: SonarQube Scanner & Quality Gate
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout do código
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Instalar utilitários (jq)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
-
-      - name: Iniciar SonarQube em background
-        run: |
-          docker run -d --name sonarqube \
-            -p 9000:9000 \
-            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-            sonarqube:9.9-community
-
-      - name: Aguardar SonarQube "UP"
-        run: |
-          for i in $(seq 1 60); do
-            status=$(curl -s ${SONAR_HOST_URL}/api/system/health | jq -r .status)
-            if [ "$status" = "UP" ]; then
-              echo "✅ SonarQube UP after $i attempts"
-              break
-            fi
-            echo "⏳ Waiting SonarQube... ($i/60) status=$status"
-            sleep 5
-          done
-
-      - name: Gerar token SonarQube em runtime
-        id: gen_token
-        run: |
-          NAME="github-ci-$(date +%s)"
-          resp=$(curl -s -u admin:admin \
-            -X POST "${SONAR_HOST_URL}/api/user_tokens/generate" \
-            -d "name=$NAME")
-          token=$(echo "$resp" | jq -r .token)
-          echo "SONAR_TOKEN=$token" >> $GITHUB_ENV
-
-      - name: Configurar Java 11
-        uses: actions/setup-java@v4
+      - name: Setup Java
+        uses: actions/setup-java@v3
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '11'
 
-      - name: Baixar SonarScanner CLI
-        run: |
-          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
-          unzip sonar-scanner-cli-4.8.0.2856-linux.zip
-          mv sonar-scanner-4.8.0.2856-linux sonar-scanner
-          echo "${GITHUB_WORKSPACE}/sonar-scanner/bin" >> $GITHUB_PATH
+      - name: Setup Node.js
+        uses: actions/setup-node@v20
+        with:
+          node-version: '18'
 
-      - name: Executar SonarScanner e capturar saída
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run SonarQube Scanner
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+          PROJECT_KEY:    ${{ secrets.PROJECT_KEY }}
         run: |
           sonar-scanner \
             -Dsonar.projectKey=$PROJECT_KEY \
-            -Dsonar.projectName="JuiceShop" \
             -Dsonar.sources=. \
             -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=$SONAR_TOKEN \
-          2>&1 | tee scanner.log
+            -Dsonar.login=$SONAR_TOKEN
 
-      - name: Extrair taskId da análise
+      - id: parse_task
+        name: Parse report-task.txt
         run: |
-          taskUrl=$(grep -o 'api/ce/task?id=[^ ]*' scanner.log | head -n1)
-          taskId=${taskUrl#*id=}  
-          echo "TASK_ID=$taskId" >> $GITHUB_ENV
+          # Extrai analysisId do relatório local
+          echo "analysis_id=$(grep analysisId .scannerwork/report-task.txt | cut -d'=' -f2)" >> $GITHUB_OUTPUT
 
-      - name: Validar Quality Gate
+      - name: Validate Quality Gate
+        env:
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
         run: |
-          # Autentica com o token na API de Quality Gate
           curl -s -u "${SONAR_TOKEN}:" \
-            "${SONAR_HOST_URL}/api/qualitygates/project_status?taskId=${TASK_ID}" \
+            "${SONAR_HOST_URL}/api/qualitygates/project_status?analysisId=${{ steps.parse_task.outputs.analysis_id }}" \
             | tee qg.json
-
           status=$(jq -r .projectStatus.status qg.json)
           echo "Quality Gate status: $status"
-
           if [ "$status" != "OK" ]; then
             echo "❌ Quality Gate FAILED"
-            echo "Listando problemas encontrados:"
-            # Autentica também na listagem de issues
-            curl -s -u "${SONAR_TOKEN}:" \
-              "${SONAR_HOST_URL}/api/issues/search?projectKeys=${PROJECT_KEY}&ps=100" \
-              | jq -r '.issues[] \
-                        | "\(.severity) em \(.component):\(.line) → \(.message)"'
+            jq -r '.projectStatus.conditions[]
+                   | "\(.status) em métrica \(.metricKey): valor \(.actualValue)/\(.errorThreshold)"' qg.json
             exit 1
           else
-            echo "✅ Quality Gate PASSED — nenhum problema crítico encontrado."
+            echo "✅ Quality Gate PASSED"
           fi
 
       - name: Upload SonarQube report
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v4
         with:
-          name: sonar-report
-          path: |
-            scanner.log
-            qg.json
-      # Artifact disponibilizado para análise posterior
-
-      - name: Parar SonarQube
-        if: always()
-        run: docker stop sonarqube
+          name: sonar-qg-report
+          path: qg.json

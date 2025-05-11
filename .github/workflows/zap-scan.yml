@@ -37,7 +37,7 @@ jobs:
           docker run --network zap-net \
             -v "${{ github.workspace }}/.github/zap:/zap/context:ro" \
             -v "${{ github.workspace }}:/zap/wrk/:rw" \
-            owasp/zap2docker-stable \
+            ghcr.io/zaproxy/zaproxy:stable \
             zap-full-scan.py \
               -t http://juice-shop:3000 \
               -c /zap/context/juice-shop.context \
