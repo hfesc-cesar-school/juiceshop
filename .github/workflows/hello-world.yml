@@ -1,0 +1,21 @@
+name: Hello World CI
+
+# Dispara em todo push para a branch main
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  say-hello:
+    # usa o runner hospedado pela GitHub (ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      # Faz checkout do código (necessário para ter um workspace)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Executa o comando de Hello World
+      - name: Say Hello
+        run: echo "Hello World from GitHub Actions!"
