@@ -2,9 +2,11 @@ name: NPM Audit
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
-    branches: [ main ]
+    branches:
+      - main
 
 jobs:
   audit:
@@ -25,28 +27,30 @@ jobs:
           fi
 
       - name: Executar npm audit
-        # '--json' envia output para STDOUT, '|| true' impede exit code ≠ 0 de abortar
-        run: npm audit --json > audit-report.json || true
+        run: |
+          npm audit --json > audit-report.json || true
 
       - name: Instalar jq
-        run: sudo apt-get update && sudo apt-get install -y jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       - name: Validar resultados do audit
         run: |
-          total=$(jq '   \
-            if .metadata.vulnerabilities then    \
-              reduce .metadata.vulnerabilities[] as $v (0; . + $v)    \
-            else 0 end' audit-report.json)
-
+          total=$(jq 'if has("metadata") and .metadata.vulnerabilities then reduce .metadata.vulnerabilities[] as $v (0; . + $v) else 0 end' audit-report.json)
           if [ "$total" -eq 0 ]; then
             echo "✅ Nenhuma vulnerabilidade encontrada pelo npm audit"
           else
             echo "❌ npm audit encontrou $total vulnerabilidades:"
-            jq -r '.advisories[]
-                    | "\(.severity) em \(.module_name) – \(.title):
-    versões vulneráveis: \(.vulnerable_versions);
-    patch em: \(.patched_versions);
-    mais info: \(.url)"' \
-      audit-report.json
-      exit 1
-      fi
+            jq -r '
+              .advisories[]
+              | "\(.severity) em \(.module_name) – \(.title): versões vulneráveis: \(.vulnerable_versions); patch em: \(.patched_versions); mais info: \(.url)"
+            ' audit-report.json
+            exit 1
+          fi
+
+      - name: Upload npm audit report
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: npm-audit-report
+          path: audit-report.json

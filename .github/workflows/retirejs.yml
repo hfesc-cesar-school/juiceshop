@@ -3,6 +3,8 @@ name: OWASP Retire.js
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   retirejs:
@@ -12,7 +14,7 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Instalar geriRetire.js
+      - name: Instalar Retire.js
         run: npm install -g retire
 
       - name: Executar Retire.js scan
@@ -30,8 +32,14 @@ jobs:
             echo "❌ Retire.js encontrou $issues problemas:"
             jq -r '.data[]
                     | "\(.component)@\(.version):
-                       \(.vulnerabilities[] 
+                       \(.vulnerabilities[]
                          | "- \(.info[0]) (categoria: \(.severity))")"' \
                  retire-report.json
             exit 1
           fi
+
+      - name: Upload Retire.js report
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: retirejs-report
+          path: retire-report.json

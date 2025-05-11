@@ -1,0 +1,33 @@
+<Context>
+  <name>juice-shop</name>
+  <!-- Inclui toda a UI e API REST principal -->
+  <include>
+    <regex>^https?://juice-shop:3000/.*$</regex>
+  </include>
+  <!-- API de desafios -->
+  <include>
+    <regex>^https?://juice-shop:3000/api/Challenges.*$</regex>
+  </include>
+  <!-- Autenticação -->
+  <include>
+    <regex>^https?://juice-shop:3000/rest/user/login.*$</regex>
+  </include>
+  <!-- Busca de produtos -->
+  <include>
+    <regex>^https?://juice-shop:3000/rest/products/search\?q=.*$</regex>
+  </include>
+  <!-- Gestão de usuários e cesta -->
+  <include>
+    <regex>^https?://juice-shop:3000/api/Users/.*$</regex>
+  </include>
+  <include>
+    <regex>^https?://juice-shop:3000/api/BasketItems/.*$</regex>
+  </include>
+  <include>
+    <regex>^https?://juice-shop:3000/rest/basket/.*$</regex>
+  </include>
+  <!-- Métricas do Prometheus -->
+  <include>
+    <regex>^https?://juice-shop:3000/metrics.*$</regex>
+  </include>
+</Context>

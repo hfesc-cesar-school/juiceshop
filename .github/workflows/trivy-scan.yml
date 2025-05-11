@@ -3,6 +3,8 @@ name: Trivy Container Scan
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   trivy:
@@ -24,13 +26,14 @@ jobs:
             -v /var/run/docker.sock:/var/run/docker.sock \
             -v "${{ github.workspace }}:/project" \
             aquasec/trivy:0.38.0 \
-            --exit-code 0 \
-            --severity HIGH,CRITICAL \
-            --format json \
-            -o trivy-report.json \
-            juiceshop:latest
+            image \
+              --exit-code 1 \
+              --severity HIGH,CRITICAL \
+              --format json \
+              -o trivy-report.json \
+              juiceshop:latest
 
-      - name: Validar resultados
+      - name: Validar resultados do Trivy
         run: |
           count=$(jq '[.Results[].Vulnerabilities[]] | length' trivy-report.json)
           if [ "$count" -eq 0 ]; then
@@ -38,10 +41,15 @@ jobs:
           else
             echo "❌ Trivy encontrou $count vulnerabilidades HIGH/CRITICAL:"
             jq -r '.Results[]
-                    | .Target as $t
                     | .Vulnerabilities[]
-                    | "\(.Severity) em \(.PkgName)@\(.InstalledVersion) em \($t):
+                    | "\(.Severity) em \(.PkgName)@\(.InstalledVersion):
                        \(.Title) → \(.Description)"' \
                  trivy-report.json
             exit 1
           fi
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: trivy-report
+          path: trivy-report.json

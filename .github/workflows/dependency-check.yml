@@ -16,14 +16,13 @@ jobs:
 
       - name: Instalar dependências Node.js
         run: |
-          # Garante package-lock.json e node_modules
           if [ -f package-lock.json ]; then
             npm ci
           else
             npm install
           fi
 
-      - name: Executar OWASP Dependency-Check
+      - name: Executar OWASP Dependency-Check (ignorar exit code)
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/src" \
@@ -31,12 +30,15 @@ jobs:
             --scan /src \
             --format JSON \
             --out /src \
-            --disableArchive
+            --disableArchive || true
 
       - name: Validar relatório e listar vulnerabilidades
         run: |
           REPORT="dependency-check-report.json"
-          # Conta dependências com vulnerabilidades
+          if [ ! -f "$REPORT" ]; then
+            echo "❌ Relatório não encontrado em $REPORT"
+            exit 1
+          fi
           vuln_count=$(jq '[.dependencies[] | select(.vulnerabilities != null)] | length' "$REPORT")
           if [ "$vuln_count" -eq 0 ]; then
             echo "✅ Nenhuma vulnerabilidade encontrada pelo Dependency-Check"
@@ -51,3 +53,10 @@ jobs:
             ' "$REPORT"
             exit 1
           fi
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: dependency-check-report
+          path: dependency-check-report.json
+      # Artifact disponível para download via GitHub Actions
