@@ -3,6 +3,8 @@ name: NPM Audit
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   audit:
@@ -13,26 +15,38 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Instalar dependências
-        run: npm ci
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "🚀 package-lock.json encontrado, usando npm ci"
+            npm ci
+          else
+            echo "🔧 package-lock.json não encontrado, usando npm install"
+            npm install
+          fi
 
       - name: Executar npm audit
+        # '--json' envia output para STDOUT, '|| true' impede exit code ≠ 0 de abortar
         run: npm audit --json > audit-report.json || true
 
       - name: Instalar jq
         run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Validar resultados
+      - name: Validar resultados do audit
         run: |
-          total=$(jq 'reduce .metadata.vulnerabilities | to_entries[] as $e (0; . + $e.value)' audit-report.json)
+          total=$(jq '   \
+            if .metadata.vulnerabilities then    \
+              reduce .metadata.vulnerabilities[] as $v (0; . + $v)    \
+            else 0 end' audit-report.json)
+
           if [ "$total" -eq 0 ]; then
             echo "✅ Nenhuma vulnerabilidade encontrada pelo npm audit"
           else
             echo "❌ npm audit encontrou $total vulnerabilidades:"
             jq -r '.advisories[]
                     | "\(.severity) em \(.module_name) – \(.title):
-                       versões vulneráveis: \(.vulnerable_versions),
-                       atualizado em ≥ \(.patched_versions),
-                       veja \(.url)"' \
-                 audit-report.json
-            exit 1
-          fi
+    versões vulneráveis: \(.vulnerable_versions);
+    patch em: \(.patched_versions);
+    mais info: \(.url)"' \
+      audit-report.json
+      exit 1
+      fi
