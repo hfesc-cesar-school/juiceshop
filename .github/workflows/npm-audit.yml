@@ -1,0 +1,38 @@
+name: NPM Audit
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Executar npm audit
+        run: npm audit --json > audit-report.json || true
+
+      - name: Instalar jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Validar resultados
+        run: |
+          total=$(jq 'reduce .metadata.vulnerabilities | to_entries[] as $e (0; . + $e.value)' audit-report.json)
+          if [ "$total" -eq 0 ]; then
+            echo "✅ Nenhuma vulnerabilidade encontrada pelo npm audit"
+          else
+            echo "❌ npm audit encontrou $total vulnerabilidades:"
+            jq -r '.advisories[]
+                    | "\(.severity) em \(.module_name) – \(.title):
+                       versões vulneráveis: \(.vulnerable_versions),
+                       atualizado em ≥ \(.patched_versions),
+                       veja \(.url)"' \
+                 audit-report.json
+            exit 1
+          fi

@@ -1,0 +1,47 @@
+name: Trivy Container Scan
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  trivy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Instalar jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Build da imagem Docker
+        run: docker build -t juiceshop:latest .
+
+      - name: Executar Trivy scan
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${{ github.workspace }}:/project" \
+            aquasec/trivy:0.38.0 \
+            --exit-code 0 \
+            --severity HIGH,CRITICAL \
+            --format json \
+            -o trivy-report.json \
+            juiceshop:latest
+
+      - name: Validar resultados
+        run: |
+          count=$(jq '[.Results[].Vulnerabilities[]] | length' trivy-report.json)
+          if [ "$count" -eq 0 ]; then
+            echo "✅ Nenhuma vulnerabilidade HIGH/CRITICAL encontrada pelo Trivy"
+          else
+            echo "❌ Trivy encontrou $count vulnerabilidades HIGH/CRITICAL:"
+            jq -r '.Results[]
+                    | .Target as $t
+                    | .Vulnerabilities[]
+                    | "\(.Severity) em \(.PkgName)@\(.InstalledVersion) em \($t):
+                       \(.Title) → \(.Description)"' \
+                 trivy-report.json
+            exit 1
+          fi
