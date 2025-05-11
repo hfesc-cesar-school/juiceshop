@@ -1,29 +1,14 @@
-name: SonarQube Analysis
+name: SonarQube via Docker
 
-# Dispara sempre que houver push em main ou pull request contra main
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
-    branches:
-      - main
+    branches: [ main ]
 
 jobs:
-  sonar-analysis:
+  sonar:
     runs-on: ubuntu-latest
-    services:
-      sonarqube:
-        image: sonarqube:9.9-community
-        # mapeia porta para healthcheck interno; não expõe fora do runner
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd="curl -sSf http://localhost:9000/api/system/health || exit 1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=10
-
     env:
       SONAR_HOST_URL: http://localhost:9000
       SONAR_LOGIN: ${{ secrets.SONAR_TOKEN }}
@@ -32,43 +17,47 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Configurar Java (requisito para SonarScanner)
+      - name: Iniciar SonarQube em background
+        run: |
+          docker run -d --name sonarqube \
+            -p 9000:9000 \
+            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+            sonarqube:9.9-community
+
+      - name: Aguardar SonarQube “UP”
+        run: |
+          for i in $(seq 1 60); do
+            if curl -s ${SONAR_HOST_URL}/api/system/health | grep -q '"status":"UP"'; then
+              echo "✅ SonarQube está UP após $i tentativas."
+              break
+            fi
+            echo "⏳ Tentativa $i/60 – aguardando SonarQube..."
+            sleep 5
+          done
+
+      - name: Configurar Java 11
         uses: actions/setup-java@v3
         with:
           distribution: temurin
           java-version: '11'
 
-      - name: Baixar SonarScanner CLI
+      - name: Baixar e instalar SonarScanner CLI
         run: |
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-4.8.0.2856-linux.zip
           unzip sonar-scanner-cli-4.8.0.2856-linux.zip
           mv sonar-scanner-4.8.0.2856-linux sonar-scanner
-          echo "${{ github.workspace }}/sonar-scanner/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/sonar-scanner/bin" >> $GITHUB_PATH
 
-      - name: Esperar SonarQube ficar pronto
-        run: |
-          # tenta até 30 vezes acessar o health endpoint
-          count=0
-          until curl -sSf http://localhost:9000/api/system/health | grep -q "\"status\":\"UP\"\""; do
-            count=$((count+1))
-            if [ $count -gt 30 ]; then
-              echo "SonarQube não subiu em tempo" >&2
-              exit 1
-            fi
-            echo "Aguardando SonarQube... ($count/30)"
-            sleep 10
-          done
-
-      - name: Executar SonarScanner
+      - name: Executar análise SonarQube
         run: |
           sonar-scanner \
             -Dsonar.projectKey=hfesc-cesar-juiceshop \
             -Dsonar.projectName="JuiceShop" \
-            -Dsonar.sources=./ \
+            -Dsonar.sources=. \
             -Dsonar.host.url=$SONAR_HOST_URL \
             -Dsonar.login=$SONAR_LOGIN
 
       - name: Parar SonarQube
         if: always()
         run: |
-          docker stop $(docker ps -q --filter ancestor=sonarqube:9.9-community)
+          docker stop sonarqube
