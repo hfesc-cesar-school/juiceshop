@@ -14,12 +14,19 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
       - name: Instalar dependências Node.js
         run: |
           if [ -f package-lock.json ]; then
-            npm ci
+            npm ci --prefer-offline --no-audit
           else
-            npm install
+            npm install --no-audit
           fi
 
       - name: Executar OWASP Dependency-Check (ignorar exit code)

@@ -20,6 +20,7 @@ jobs:
         with:
           node-version: 18                   # ⬅ lock version
           cache: 'npm'                       # cache dependências
+          cache-dependency-path: package-lock.json
 
       - name: Install deps (prefere lockfile)
         run: |
@@ -51,6 +52,14 @@ jobs:
         if: matrix.tool == 'codeql'
         uses: github/codeql-action/init@v3     # CodeQL já faz upload SARIF automático
         with: { languages: javascript }
+
+      - name: Use Node.js 18
+        if: matrix.tool != 'codeql'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
 
       - name: Install deps
         if: matrix.tool != 'codeql'
