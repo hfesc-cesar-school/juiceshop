@@ -15,15 +15,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Cache NPM
-        uses: actions/cache@v4                # 🔄 cache node_modules
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4          # guia oficial de build/test Node.js
         with:
-          path: ~/.npm
-          key: ${{ runner.os }}-${{ env.CACHE_VERSION }}-${{ hashFiles('**/package-lock.json') }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      - run: npm ci --prefer-offline
-      - run: npm run lint && npm test
+          node-version: 18                   # ⬅ lock version
+          cache: 'npm'                       # cache dependências
+
+      - name: Install deps (prefere lockfile)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --prefer-offline --no-audit
+          else
+            echo "::warning ::package-lock.json não encontrado; executando npm install"
+            npm install --no-audit
+          fi
+
+      - run: npm run lint
+      - run: npm test
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         with:
@@ -46,7 +56,13 @@ jobs:
 
       - name: Install deps
         if: matrix.tool != 'codeql'
-        run: npm ci --prefer-offline
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --prefer-offline --no-audit
+          else
+            echo "::warning ::package-lock.json ausente; usando npm install"
+            npm install --no-audit
+          fi
 
       - name: NPM Audit (lock-file only)
         if: matrix.tool == 'npm-audit'
