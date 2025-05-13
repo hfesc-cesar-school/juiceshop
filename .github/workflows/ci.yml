@@ -14,8 +14,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Cache NPM
-      - uses: actions/checkout@v4
 
       - name: Use Node.js 18
         uses: actions/setup-node@v4          # guia oficial de build/test Node.js
