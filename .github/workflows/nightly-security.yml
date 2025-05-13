@@ -1,0 +1,35 @@
+name: Nightly Heavy Security
+on:
+  schedule:
+    - cron: '22 3 * * *'     # 03:22 UTC (~00:22 BRT)
+  workflow_dispatch:
+
+jobs:
+  heavy-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache NVD (Dependency-Check)
+        uses: actions/cache@v4
+        with:
+          path: ~/.dependency-check/data
+          key: nvd-${{ hashFiles('package-lock.json') }}      # :contentReference[oaicite:2]{index=2}
+
+      - name: Dependency-Check SARIF
+        run: |
+          docker run --rm -v $PWD:/src owasp/dependency-check \
+            --format SARIF --project Juice \
+            --scan /src/package-lock.json \
+            -o depcheck.sarif
+
+      - name: ZAP Full Scan
+        run: |
+          docker-compose -f infra/zap-compose.yml up --abort-on-container-exit
+          cp zap-report.sarif zap.sarif
+
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: |
+            depcheck.sarif
+            zap.sarif

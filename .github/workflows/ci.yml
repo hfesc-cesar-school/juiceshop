@@ -1,0 +1,72 @@
+name: Build-Test-Security CI
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: 18
+  CACHE_VERSION: v1               # invalida cache quando trocar versão
+
+jobs:
+
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache NPM
+        uses: actions/cache@v4                # 🔄 cache node_modules
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-${{ env.CACHE_VERSION }}-${{ hashFiles('**/package-lock.json') }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci --prefer-offline
+      - run: npm run lint && npm test
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage/
+
+  security:
+    needs: build-test                         # usa o artefato do build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tool: [ codeql, npm-audit, trivy ]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: CodeQL SAST
+        if: matrix.tool == 'codeql'
+        uses: github/codeql-action/init@v3     # CodeQL já faz upload SARIF automático
+        with: { languages: javascript }
+
+      - name: Install deps
+        if: matrix.tool != 'codeql'
+        run: npm ci --prefer-offline
+
+      - name: NPM Audit (lock-file only)
+        if: matrix.tool == 'npm-audit'
+        run: |
+          npm audit --json > audit.json
+          ./scripts/audit2sarif audit.json audit.sarif       # pequena utility
+      - name: Build image
+        if: matrix.tool == 'trivy'
+        run: docker build -t juiceshop:${{ github.sha }} .
+      - name: Trivy container scan ➔ SARIF
+        if: matrix.tool == 'trivy'
+        uses: aquasecurity/trivy-action@v0.21.0        # :contentReference[oaicite:0]{index=0}
+        with:
+          image-ref: juiceshop:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy.sarif'
+          severity: 'HIGH,CRITICAL'
+
+      - name: Upload SARIF
+        if: matrix.tool != 'codeql'
+        uses: github/codeql-action/upload-sarif@v3     # :contentReference[oaicite:1]{index=1}
+        with:
+          sarif_file: ${{ matrix.tool }}*.sarif
