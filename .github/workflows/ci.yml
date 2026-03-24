@@ -81,7 +81,7 @@ jobs:
         run: docker build -t juiceshop:${{ github.sha }} .
       - name: Trivy container scan ➔ SARIF
         if: matrix.tool == 'trivy'
-        uses: aquasecurity/trivy-action@v0.21.0        # :contentReference[oaicite:0]{index=0}
+        uses: aquasecurity/trivy-action@0.35.0        # :contentReference[oaicite:0]{index=0}
         with:
           image-ref: juiceshop:${{ github.sha }}
           format: 'sarif'
